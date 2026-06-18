@@ -255,6 +255,21 @@ class ClaudeUsageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
 
 
+def _ceil_to_minute(iso_str: str | None) -> str | None:
+    """Round an ISO timestamp up to the nearest minute to suppress sub-minute API jitter."""
+    if not iso_str:
+        return iso_str
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        if dt.second or dt.microsecond:
+            dt = dt.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        else:
+            dt = dt.replace(microsecond=0)
+        return dt.isoformat()
+    except (ValueError, TypeError):
+        return iso_str
+
+
 def _parse_usage(raw: dict[str, Any]) -> dict[str, Any]:
     """Parse raw API response into flat sensor data dict."""
     data: dict[str, Any] = {}
@@ -262,14 +277,14 @@ def _parse_usage(raw: dict[str, Any]) -> dict[str, Any]:
     five_hour = raw.get("five_hour")
     if five_hour:
         data["session_usage_percent"] = five_hour.get("utilization")
-        data["session_reset_time"] = five_hour.get("resets_at")
+        data["session_reset_time"] = _ceil_to_minute(five_hour.get("resets_at"))
 
     seven_day = raw.get("seven_day")
     if seven_day:
         utilization = seven_day.get("utilization")
         reset_time = seven_day.get("resets_at")
         data["week_usage_percent"] = utilization
-        data["week_reset_time"] = reset_time
+        data["week_reset_time"] = _ceil_to_minute(reset_time)
         if utilization is not None and reset_time:
             try:
                 reset_dt = datetime.fromisoformat(reset_time)
@@ -284,7 +299,7 @@ def _parse_usage(raw: dict[str, Any]) -> dict[str, Any]:
     seven_day_sonnet = raw.get("seven_day_sonnet")
     if seven_day_sonnet:
         data["week_sonnet_usage_percent"] = seven_day_sonnet.get("utilization")
-        data["week_sonnet_reset_time"] = seven_day_sonnet.get("resets_at")
+        data["week_sonnet_reset_time"] = _ceil_to_minute(seven_day_sonnet.get("resets_at"))
 
     # Overage/extra usage. The older API exposes this under "extra_usage" with
     # credits in minor currency units; the newer API (mid-2026) moved it to a
