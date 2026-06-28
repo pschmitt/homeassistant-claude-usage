@@ -34,6 +34,12 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
+RESET_TIME_KEYS = (
+    "session_reset_time",
+    "week_reset_time",
+    "week_sonnet_reset_time",
+)
+RESET_TIME_JITTER_TOLERANCE = timedelta(seconds=61)
 
 type ClaudeUsageConfigEntry = ConfigEntry[ClaudeUsageCoordinator]
 
@@ -212,7 +218,8 @@ class ClaudeUsageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Error fetching usage data: {err}") from err
 
-        return _parse_usage(raw)
+        data = _parse_usage(raw)
+        return _stabilize_reset_times(self.data, data)
 
     async def _ensure_valid_token(self) -> None:
         """Refresh the access token if expired."""
@@ -398,3 +405,29 @@ def _parse_limits(limits: list[dict[str, Any]] | None) -> dict[str, dict[str, An
             "surface": surface,
         }
     return parsed
+
+
+def _stabilize_reset_times(
+    previous: dict[str, Any] | None, current: dict[str, Any]
+) -> dict[str, Any]:
+    """Keep previously published reset times when the API only jitters slightly."""
+    if not previous:
+        return current
+
+    stabilized = dict(current)
+    for key in RESET_TIME_KEYS:
+        previous_value = previous.get(key)
+        current_value = current.get(key)
+        if not previous_value or not current_value:
+            continue
+
+        try:
+            previous_dt = datetime.fromisoformat(previous_value)
+            current_dt = datetime.fromisoformat(current_value)
+        except (ValueError, TypeError):
+            continue
+
+        if abs(current_dt - previous_dt) <= RESET_TIME_JITTER_TOLERANCE:
+            stabilized[key] = previous_value
+
+    return stabilized
