@@ -40,6 +40,7 @@ RESET_TIME_KEYS = (
     "week_sonnet_reset_time",
 )
 RESET_TIME_JITTER_TOLERANCE = timedelta(seconds=61)
+RESET_TIME_JITTER_CONFIRMATIONS = 2
 
 type ClaudeUsageConfigEntry = ConfigEntry[ClaudeUsageCoordinator]
 
@@ -187,6 +188,7 @@ class ClaudeUsageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ClaudeUsageConfigEntry) -> None:
         """Initialize the coordinator."""
         interval = entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        self._pending_reset_time_updates: dict[str, tuple[str, int]] = {}
         super().__init__(
             hass,
             _LOGGER,
@@ -218,8 +220,7 @@ class ClaudeUsageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Error fetching usage data: {err}") from err
 
-        data = _parse_usage(raw)
-        return _stabilize_reset_times(self.data, data)
+        return self._stabilize_reset_times(_parse_usage(raw))
 
     async def _ensure_valid_token(self) -> None:
         """Refresh the access token if expired."""
@@ -260,6 +261,50 @@ class ClaudeUsageCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             CONF_EXPIRES_AT: time.time() + token_data.get("expires_in", 3600),
         }
         self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
+
+    def _stabilize_reset_times(self, current: dict[str, Any]) -> dict[str, Any]:
+        """Suppress transient minute-level reset-time jitter without pinning real shifts."""
+        if not self.data:
+            self._pending_reset_time_updates.clear()
+            return current
+
+        stabilized = dict(current)
+        for key in RESET_TIME_KEYS:
+            previous_value = self.data.get(key)
+            current_value = current.get(key)
+            if not previous_value or not current_value:
+                self._pending_reset_time_updates.pop(key, None)
+                continue
+            if previous_value == current_value:
+                self._pending_reset_time_updates.pop(key, None)
+                continue
+
+            try:
+                previous_dt = datetime.fromisoformat(previous_value)
+                current_dt = datetime.fromisoformat(current_value)
+            except (ValueError, TypeError):
+                self._pending_reset_time_updates.pop(key, None)
+                continue
+
+            if abs(current_dt - previous_dt) > RESET_TIME_JITTER_TOLERANCE:
+                self._pending_reset_time_updates.pop(key, None)
+                continue
+
+            pending_value, pending_count = self._pending_reset_time_updates.get(key, (None, 0))
+            if pending_value == current_value:
+                pending_count += 1
+            else:
+                pending_value = current_value
+                pending_count = 1
+
+            if pending_count >= RESET_TIME_JITTER_CONFIRMATIONS:
+                self._pending_reset_time_updates.pop(key, None)
+                continue
+
+            self._pending_reset_time_updates[key] = (pending_value, pending_count)
+            stabilized[key] = previous_value
+
+        return stabilized
 
 
 def _ceil_to_minute(iso_str: str | None) -> str | None:
@@ -405,29 +450,3 @@ def _parse_limits(limits: list[dict[str, Any]] | None) -> dict[str, dict[str, An
             "surface": surface,
         }
     return parsed
-
-
-def _stabilize_reset_times(
-    previous: dict[str, Any] | None, current: dict[str, Any]
-) -> dict[str, Any]:
-    """Keep previously published reset times when the API only jitters slightly."""
-    if not previous:
-        return current
-
-    stabilized = dict(current)
-    for key in RESET_TIME_KEYS:
-        previous_value = previous.get(key)
-        current_value = current.get(key)
-        if not previous_value or not current_value:
-            continue
-
-        try:
-            previous_dt = datetime.fromisoformat(previous_value)
-            current_dt = datetime.fromisoformat(current_value)
-        except (ValueError, TypeError):
-            continue
-
-        if abs(current_dt - previous_dt) <= RESET_TIME_JITTER_TOLERANCE:
-            stabilized[key] = previous_value
-
-    return stabilized
