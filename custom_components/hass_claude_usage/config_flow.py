@@ -91,9 +91,12 @@ class ClaudeUsageConfigFlow(ConfigFlow, domain=DOMAIN):
                     errors["auth_code"] = "exchange_failed"
                 else:
                     # Fetch account info for display and dedup
-                    account_id, account_name, account_email, subscription_level = (
-                        await self._fetch_account_info(token_data["access_token"])
-                    )
+                    (
+                        account_id,
+                        account_name,
+                        account_email,
+                        subscription_level,
+                    ) = await self._fetch_account_info(token_data["access_token"])
 
                     # Build title with name and subscription level
                     title_parts = ["Claude Usage"]
@@ -260,9 +263,12 @@ class ClaudeUsageConfigFlow(ConfigFlow, domain=DOMAIN):
                 if token_data is None:
                     errors["auth_code"] = "exchange_failed"
                 else:
-                    account_id, account_name, account_email, subscription_level = (
-                        await self._fetch_account_info(token_data["access_token"])
-                    )
+                    (
+                        account_id,
+                        account_name,
+                        account_email,
+                        subscription_level,
+                    ) = await self._fetch_account_info(token_data["access_token"])
 
                     entry = (
                         self._get_reconfigure_entry()
