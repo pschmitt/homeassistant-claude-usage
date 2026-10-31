@@ -112,7 +112,7 @@ Refactored from a standalone daemon concept originally explored in the `cc-playg
 
 **Endpoints:**
 - Authorize: `https://console.anthropic.com/oauth/authorize`
-- Token: `https://console.anthropic.com/v1/oauth/token`
+- Token: Read from a local secret store; never commit a token value.
 - Redirect URI: `https://console.anthropic.com/oauth/code/callback`
 
 **Scopes:** `org:create_api_key user:profile user:inference user:sessions:claude_code`
