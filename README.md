@@ -1,5 +1,7 @@
 # Claude Usage - Home Assistant Integration
 
+[![Open this integration in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=pschmitt&repository=homeassistant-claude-usage&category=integration)
+
 A custom Home Assistant integration that monitors your Claude (Anthropic) subscription usage.
 
 ![Claude Usage Screenshot](screenshot.jpg)
@@ -20,9 +22,9 @@ A custom Home Assistant integration that monitors your Claude (Anthropic) subscr
 
 ## Installation
 
-### HACS (recommended)
+### HACS custom repository
 
-1. Add this repository as a custom repository in HACS
+1. Click the Marketplace badge above, or add `https://github.com/pschmitt/homeassistant-claude-usage` to HACS as a custom repository (Integration).
 2. Restart Home Assistant
 3. Install "Claude Usage"
 4. Go to Settings → Devices & Services → Add Integration → "Claude Usage"
